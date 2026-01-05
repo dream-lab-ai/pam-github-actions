@@ -1,0 +1,132 @@
+name: 'Linting'
+description: 'Run linting checks with GitHub summaries and artifact uploads'
+author: 'Pam Team'
+
+inputs:
+  node-version:
+    description: 'Node.js version to use'
+    required: false
+    default: '22'
+  package-manager:
+    description: 'Package manager to use (npm, pnpm, or yarn)'
+    required: false
+    default: 'npm'
+  lint-command:
+    description: 'Lint command to run'
+    required: false
+    default: 'npm run lint'
+  skip-env-validation:
+    description: 'Skip environment validation'
+    required: false
+    default: 'true'
+  results-directory:
+    description: 'Directory to store lint results'
+    required: false
+    default: 'lint-results'
+  artifact-name-prefix:
+    description: 'Prefix for artifact name'
+    required: false
+    default: 'lint-results'
+
+outputs:
+  lint_passed:
+    description: 'Boolean indicating if linting passed'
+    value: ${{ steps.lint_results.outputs.lint_passed }}
+  lint_results_path:
+    description: 'Path to the lint results directory'
+    value: ${{ steps.lint_results.outputs.lint_results_path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Lint Results Directory
+      shell: bash
+      run: |
+        mkdir -p ${{ inputs.results-directory }}
+        echo "Created lint results directory: ${{ inputs.results-directory }}"
+
+    - name: Run Linting
+      id: run_lint
+      shell: bash
+      run: |
+        echo "## Lint Results" >> $GITHUB_STEP_SUMMARY
+        echo "🔍 Running linting checks..." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        # Run linting with live output and save to file
+        set +e  # Don't exit on error immediately
+        ${{ inputs.lint-command }} 2>&1 | tee ${{ inputs.results-directory }}/lint-output.txt
+        lint_exit_code=${PIPESTATUS[0]}
+        set -e  # Re-enable exit on error
+
+        # Store exit code for later steps
+        echo "lint_exit_code=$lint_exit_code" >> $GITHUB_OUTPUT
+
+        if [ $lint_exit_code -eq 0 ]; then
+          echo "lint_status=passed" >> $GITHUB_OUTPUT
+        else
+          echo "lint_status=failed" >> $GITHUB_OUTPUT
+        fi
+      env:
+        HUSKY: 0
+        SKIP_ENV_VALIDATION: ${{ inputs.skip-env-validation }}
+
+    - name: Generate GitHub Step Summary
+      if: always()
+      shell: bash
+      run: |
+        lint_status="${{ steps.run_lint.outputs.lint_status }}"
+        lint_exit_code="${{ steps.run_lint.outputs.lint_exit_code }}"
+
+        # Display lint status
+        if [ "$lint_status" = "passed" ]; then
+          echo "### ✅ Linting Passed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All code style and quality checks passed successfully." >> $GITHUB_STEP_SUMMARY
+        else
+          echo "### ❌ Linting Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Code style or quality issues detected. Please review and fix the issues below." >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        # Display lint output for failures
+        if [ "$lint_status" = "failed" ]; then
+          echo "### Linting Issues" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          cat ${{ inputs.results-directory }}/lint-output.txt >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: Set Action Outputs
+      id: lint_results
+      if: always()
+      shell: bash
+      run: |
+        lint_status="${{ steps.run_lint.outputs.lint_status }}"
+
+        # Set lint_passed output
+        if [ "$lint_status" = "passed" ]; then
+          echo "lint_passed=true" >> $GITHUB_OUTPUT
+        else
+          echo "lint_passed=false" >> $GITHUB_OUTPUT
+        fi
+
+        # Set paths
+        echo "lint_results_path=${{ inputs.results-directory }}" >> $GITHUB_OUTPUT
+
+    - name: Upload Lint Results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name-prefix }}-${{ github.run_id }}
+        path: |
+          ${{ inputs.results-directory }}/
+        retention-days: 30
+
+    - name: Fail Job if Linting Failed
+      if: steps.run_lint.outputs.lint_status == 'failed'
+      shell: bash
+      run: |
+        echo "❌ Linting failed with exit code ${{ steps.run_lint.outputs.lint_exit_code }}"
+        exit 1

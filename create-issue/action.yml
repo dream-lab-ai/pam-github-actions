@@ -1,0 +1,126 @@
+name: 'Create Issue'
+description: 'Create GitHub issues with consistent formatting and templates'
+author: 'Pam Team'
+
+inputs:
+  issue-type:
+    description: 'Type of issue (test-failure, deployment-report, rollback-report, critical-alert)'
+    required: true
+  title:
+    description: 'Issue title'
+    required: true
+  body:
+    description: 'Issue body (Markdown supported)'
+    required: true
+  labels:
+    description: 'Comma-separated list of labels'
+    required: true
+  assignees:
+    description: 'Comma-separated list of assignees'
+    required: false
+  environment:
+    description: 'Environment (dev, production)'
+    required: false
+
+outputs:
+  issue_number:
+    description: 'Created issue number'
+    value: ${{ steps.create.outputs.issue_number }}
+  issue_url:
+    description: 'URL to created issue'
+    value: ${{ steps.create.outputs.issue_url }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Prepare Issue Content
+      id: prepare
+      shell: bash
+      run: |
+        # Convert comma-separated labels to JSON array
+        labels="${{ inputs.labels }}"
+        IFS=',' read -ra LABEL_ARRAY <<< "$labels"
+        label_json="["
+        first=true
+        for label in "${LABEL_ARRAY[@]}"; do
+          label=$(echo "$label" | xargs)  # trim whitespace
+          if [ "$first" = true ]; then
+            label_json="${label_json}\"$label\""
+            first=false
+          else
+            label_json="${label_json},\"$label\""
+          fi
+        done
+        label_json="${label_json}]"
+        echo "labels_json=$label_json" >> $GITHUB_OUTPUT
+
+        # Convert comma-separated assignees to JSON array if provided
+        assignees="${{ inputs.assignees }}"
+        if [ -n "$assignees" ]; then
+          IFS=',' read -ra ASSIGNEE_ARRAY <<< "$assignees"
+          assignee_json="["
+          first=true
+          for assignee in "${ASSIGNEE_ARRAY[@]}"; do
+            assignee=$(echo "$assignee" | xargs)  # trim whitespace
+            if [ "$first" = true ]; then
+              assignee_json="${assignee_json}\"$assignee\""
+              first=false
+            else
+              assignee_json="${assignee_json},\"$assignee\""
+            fi
+          done
+          assignee_json="${assignee_json}]"
+          echo "assignees_json=$assignee_json" >> $GITHUB_OUTPUT
+        else
+          echo "assignees_json=[]" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Create GitHub Issue
+      id: create
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const issueType = '${{ inputs.issue-type }}';
+          const title = `${{ inputs.title }}`.replace(/'/g, "\\'");
+          const body = `${{ inputs.body }}`.replace(/'/g, "\\'");
+          const labels = ${{ steps.prepare.outputs.labels_json }};
+          const assignees = ${{ steps.prepare.outputs.assignees_json }};
+
+          console.log('Creating issue with type:', issueType);
+          console.log('Labels:', labels);
+          console.log('Assignees:', assignees);
+
+          const issue = await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: title,
+            body: body,
+            labels: labels,
+            assignees: assignees.length > 0 ? assignees : undefined
+          });
+
+          core.setOutput('issue_number', issue.data.number);
+          core.setOutput('issue_url', issue.data.html_url);
+
+          console.log('✅ Issue created:', issue.data.html_url);
+          return issue.data.number;
+
+    - name: Issue Creation Summary
+      if: always()
+      shell: bash
+      run: |
+        echo "## Issue Creation" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        if [ -n "${{ steps.create.outputs.issue_number }}" ]; then
+          echo "✅ **Issue created successfully**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Issue #:** ${{ steps.create.outputs.issue_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL:** ${{ steps.create.outputs.issue_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Type:** ${{ inputs.issue-type }}" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ inputs.environment }}" ]; then
+            echo "- **Environment:** ${{ inputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          fi
+        else
+          echo "❌ **Issue creation failed**" >> $GITHUB_STEP_SUMMARY
+        fi

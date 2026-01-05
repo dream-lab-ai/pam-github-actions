@@ -1,0 +1,218 @@
+name: 'E2E Tests with Coverage'
+description: 'Run E2E tests with coverage reporting, GitHub summaries, and artifact uploads'
+author: 'Pam Team'
+
+inputs:
+  node-version:
+    description: 'Node.js version to use'
+    required: false
+    default: '22'
+  package-manager:
+    description: 'Package manager to use (npm, pnpm, or yarn)'
+    required: false
+    default: 'npm'
+  test-command:
+    description: 'E2E test command to run (should include coverage)'
+    required: false
+    default: 'npm run coverage:e2e'
+  test-env:
+    description: 'Test environment (dev, prod)'
+    required: true
+  api-url:
+    description: 'API URL to test against'
+    required: true
+  skip-env-validation:
+    description: 'Skip environment validation'
+    required: false
+    default: 'true'
+  results-directory:
+    description: 'Directory to store test results'
+    required: false
+    default: 'e2e-results'
+  artifact-name-prefix:
+    description: 'Prefix for artifact name'
+    required: false
+    default: 'e2e-test-results'
+  wait-time:
+    description: 'Seconds to wait before running tests'
+    required: false
+    default: '45'
+
+outputs:
+  test_passed:
+    description: 'Boolean indicating if tests passed'
+    value: ${{ steps.test_results.outputs.test_passed }}
+  test_results_path:
+    description: 'Path to the test results directory'
+    value: ${{ steps.test_results.outputs.test_results_path }}
+  coverage_summary_path:
+    description: 'Path to coverage summary JSON file'
+    value: ${{ steps.test_results.outputs.coverage_summary_path }}
+  coverage_text:
+    description: 'Text output of coverage summary for display'
+    value: ${{ steps.test_results.outputs.coverage_text }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Test Results Directory
+      shell: bash
+      run: |
+        mkdir -p ${{ inputs.results-directory }}
+        echo "Created test results directory: ${{ inputs.results-directory }}"
+
+    - name: Wait for API
+      shell: bash
+      run: |
+        wait_time="${{ inputs.wait-time }}"
+        if [ "$wait_time" -gt 0 ]; then
+          echo "⏳ Waiting ${wait_time}s for API to be fully ready..."
+          sleep "$wait_time"
+        fi
+
+    - name: Run E2E Tests with Coverage
+      id: run_tests
+      shell: bash
+      run: |
+        echo "## E2E Test Results (${{ inputs.test-env }})" >> $GITHUB_STEP_SUMMARY
+        echo "🧪 Running E2E tests with coverage..." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- **Environment:** ${{ inputs.test-env }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **API URL:** ${{ inputs.api-url }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        # Run tests with live output and save to file
+        set +e  # Don't exit on error immediately
+        ${{ inputs.test-command }} 2>&1 | tee ${{ inputs.results-directory }}/e2e-test-output.txt
+        test_exit_code=${PIPESTATUS[0]}
+        set -e  # Re-enable exit on error
+
+        # Store exit code for later steps
+        echo "test_exit_code=$test_exit_code" >> $GITHUB_OUTPUT
+
+        if [ $test_exit_code -eq 0 ]; then
+          echo "test_status=passed" >> $GITHUB_OUTPUT
+        else
+          echo "test_status=failed" >> $GITHUB_OUTPUT
+        fi
+      env:
+        HUSKY: 0
+        SKIP_ENV_VALIDATION: ${{ inputs.skip-env-validation }}
+        E2E_TEST_URL: ${{ inputs.api-url }}
+        E2E_BASE_URL: ${{ inputs.api-url }}
+        TEST_ENV: ${{ inputs.test-env }}
+
+    - name: Parse Coverage Results
+      id: parse_coverage
+      if: always()
+      shell: bash
+      run: |
+        # Check if coverage summary exists
+        if [ -f "coverage/coverage-summary.json" ]; then
+          # Extract coverage percentages using jq
+          lines_pct=$(jq -r '.total.lines.pct' coverage/coverage-summary.json)
+          statements_pct=$(jq -r '.total.statements.pct' coverage/coverage-summary.json)
+          functions_pct=$(jq -r '.total.functions.pct' coverage/coverage-summary.json)
+          branches_pct=$(jq -r '.total.branches.pct' coverage/coverage-summary.json)
+          
+          # Store coverage metrics
+          echo "lines_pct=$lines_pct" >> $GITHUB_OUTPUT
+          echo "statements_pct=$statements_pct" >> $GITHUB_OUTPUT
+          echo "functions_pct=$functions_pct" >> $GITHUB_OUTPUT
+          echo "branches_pct=$branches_pct" >> $GITHUB_OUTPUT
+          echo "coverage_exists=true" >> $GITHUB_OUTPUT
+          
+          # Create coverage text summary
+          coverage_text="Lines: ${lines_pct}% | Statements: ${statements_pct}% | Functions: ${functions_pct}% | Branches: ${branches_pct}%"
+          echo "coverage_text=$coverage_text" >> $GITHUB_OUTPUT
+        else
+          echo "coverage_exists=false" >> $GITHUB_OUTPUT
+          echo "coverage_text=Coverage report not found" >> $GITHUB_OUTPUT
+          echo "⚠️ Coverage summary not found at coverage/coverage-summary.json" >> $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: Generate GitHub Step Summary
+      if: always()
+      shell: bash
+      run: |
+        test_status="${{ steps.run_tests.outputs.test_status }}"
+        test_exit_code="${{ steps.run_tests.outputs.test_exit_code }}"
+        coverage_exists="${{ steps.parse_coverage.outputs.coverage_exists }}"
+
+        # Display test status
+        if [ "$test_status" = "passed" ]; then
+          echo "### ✅ E2E Tests Passed" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "### ❌ E2E Tests Failed" >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        # Display coverage table if available
+        if [ "$coverage_exists" = "true" ]; then
+          echo "### 📊 Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric      | Coverage |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------------|----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Lines       | ${{ steps.parse_coverage.outputs.lines_pct }}% |" >> $GITHUB_STEP_SUMMARY
+          echo "| Statements  | ${{ steps.parse_coverage.outputs.statements_pct }}% |" >> $GITHUB_STEP_SUMMARY
+          echo "| Functions   | ${{ steps.parse_coverage.outputs.functions_pct }}% |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branches    | ${{ steps.parse_coverage.outputs.branches_pct }}% |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+        fi
+
+        # Display test output summary
+        if [ "$test_status" = "failed" ]; then
+          echo "### Failed Test Output" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          cat ${{ inputs.results-directory }}/e2e-test-output.txt >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "### Test Output Summary (Last 20 lines)" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          tail -20 ${{ inputs.results-directory }}/e2e-test-output.txt >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: Set Action Outputs
+      id: test_results
+      if: always()
+      shell: bash
+      run: |
+        test_status="${{ steps.run_tests.outputs.test_status }}"
+        coverage_exists="${{ steps.parse_coverage.outputs.coverage_exists }}"
+
+        # Set test_passed output
+        if [ "$test_status" = "passed" ]; then
+          echo "test_passed=true" >> $GITHUB_OUTPUT
+        else
+          echo "test_passed=false" >> $GITHUB_OUTPUT
+        fi
+
+        # Set paths
+        echo "test_results_path=${{ inputs.results-directory }}" >> $GITHUB_OUTPUT
+
+        if [ "$coverage_exists" = "true" ]; then
+          echo "coverage_summary_path=coverage/coverage-summary.json" >> $GITHUB_OUTPUT
+        else
+          echo "coverage_summary_path=" >> $GITHUB_OUTPUT
+        fi
+
+        # Set coverage text
+        echo "coverage_text=${{ steps.parse_coverage.outputs.coverage_text }}" >> $GITHUB_OUTPUT
+
+    - name: Upload Test Results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name-prefix }}-${{ inputs.test-env }}-${{ github.run_id }}
+        path: |
+          ${{ inputs.results-directory }}/
+          coverage/
+        retention-days: 30
+
+    - name: Fail Job if Tests Failed
+      if: steps.run_tests.outputs.test_status == 'failed'
+      shell: bash
+      run: |
+        echo "❌ E2E tests failed with exit code ${{ steps.run_tests.outputs.test_exit_code }}"
+        exit 1

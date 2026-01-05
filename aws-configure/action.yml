@@ -1,0 +1,103 @@
+name: 'AWS Configure'
+description: 'Configure AWS credentials using access keys or OIDC with auto-detection support'
+author: 'Pam Team'
+
+inputs:
+  aws-region:
+    description: 'AWS region to configure'
+    required: false
+    default: 'us-east-1'
+  auth-method:
+    description: 'Authentication method (access-keys, oidc, auto)'
+    required: false
+    default: 'auto'
+  aws-access-key-id:
+    description: 'AWS Access Key ID (for access-keys method)'
+    required: false
+  aws-secret-access-key:
+    description: 'AWS Secret Access Key (for access-keys method)'
+    required: false
+  role-to-assume:
+    description: 'IAM role ARN to assume (for OIDC method)'
+    required: false
+  role-session-name:
+    description: 'Role session name (for OIDC method)'
+    required: false
+    default: 'GitHubActions'
+
+outputs:
+  auth_method_used:
+    description: 'The authentication method that was used'
+    value: ${{ steps.determine_auth.outputs.auth_method }}
+  aws_region:
+    description: 'The configured AWS region'
+    value: ${{ inputs.aws-region }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Determine Authentication Method
+      id: determine_auth
+      shell: bash
+      run: |
+        auth_method="${{ inputs.auth-method }}"
+
+        # Auto-detect authentication method
+        if [ "$auth_method" = "auto" ]; then
+          if [ -n "${{ inputs.aws-access-key-id }}" ] && [ -n "${{ inputs.aws-secret-access-key }}" ]; then
+            auth_method="access-keys"
+            echo "Auto-detected: access-keys authentication"
+          elif [ -n "${{ inputs.role-to-assume }}" ]; then
+            auth_method="oidc"
+            echo "Auto-detected: OIDC authentication"
+          else
+            echo "❌ Error: Could not auto-detect authentication method"
+            echo "Please provide either aws-access-key-id + aws-secret-access-key OR role-to-assume"
+            exit 1
+          fi
+        fi
+
+        echo "auth_method=$auth_method" >> $GITHUB_OUTPUT
+        echo "## AWS Configuration" >> $GITHUB_STEP_SUMMARY
+        echo "- **Region:** ${{ inputs.aws-region }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Auth Method:** $auth_method" >> $GITHUB_STEP_SUMMARY
+
+    - name: Configure AWS Credentials (Access Keys)
+      if: steps.determine_auth.outputs.auth_method == 'access-keys'
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ inputs.aws-access-key-id }}
+        aws-secret-access-key: ${{ inputs.aws-secret-access-key }}
+        aws-region: ${{ inputs.aws-region }}
+
+    - name: Configure AWS Credentials (OIDC)
+      if: steps.determine_auth.outputs.auth_method == 'oidc'
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.role-to-assume }}
+        role-session-name: ${{ inputs.role-session-name }}
+        aws-region: ${{ inputs.aws-region }}
+
+    - name: Validate AWS Configuration
+      shell: bash
+      run: |
+        echo "🔍 Validating AWS configuration..."
+
+        # Test AWS CLI is working
+        if aws sts get-caller-identity > /dev/null 2>&1; then
+          echo "✅ AWS credentials configured successfully" >> $GITHUB_STEP_SUMMARY
+          
+          # Get account info
+          account_id=$(aws sts get-caller-identity --query Account --output text)
+          user_arn=$(aws sts get-caller-identity --query Arn --output text)
+          
+          echo "- **Account ID:** $account_id" >> $GITHUB_STEP_SUMMARY
+          echo "- **IAM Identity:** $user_arn" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ AWS credential validation failed" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        fi
+
+        # Set environment variables for consistency
+        echo "AWS_DEFAULT_REGION=${{ inputs.aws-region }}" >> $GITHUB_ENV
+        echo "AWS_REGION=${{ inputs.aws-region }}" >> $GITHUB_ENV

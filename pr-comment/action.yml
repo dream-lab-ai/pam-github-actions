@@ -1,0 +1,132 @@
+name: 'PR Comment'
+description: 'Create formatted PR comments with deployment status and test results'
+author: 'Pam Team'
+
+inputs:
+  pr-number:
+    description: 'Pull request number'
+    required: true
+  deployment-environment:
+    description: 'Deployment environment (dev, production)'
+    required: true
+  api-url:
+    description: 'Deployed API URL'
+    required: true
+  deployment-status:
+    description: 'Deployment status (success, failed)'
+    required: true
+  unit-tests-status:
+    description: 'Unit tests status (passed, failed, skipped)'
+    required: true
+  e2e-tests-status:
+    description: 'E2E tests status (passed, failed, skipped)'
+    required: true
+  lint-status:
+    description: 'Lint status (passed, failed, skipped)'
+    required: false
+    default: 'skipped'
+  coverage-text:
+    description: 'Coverage summary text'
+    required: false
+
+outputs:
+  comment_id:
+    description: 'Created comment ID'
+    value: ${{ steps.comment.outputs.comment_id }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Create PR Comment
+      id: comment
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const prNumber = parseInt('${{ inputs.pr-number }}');
+          const environment = '${{ inputs.deployment-environment }}';
+          const apiUrl = '${{ inputs.api-url }}';
+          const deploymentStatus = '${{ inputs.deployment-status }}';
+          const unitTestsStatus = '${{ inputs.unit-tests-status }}';
+          const e2eTestsStatus = '${{ inputs.e2e-tests-status }}';
+          const lintStatus = '${{ inputs.lint-status }}';
+          const coverageText = '${{ inputs.coverage-text }}';
+
+          // Determine overall status
+          const allPassed = deploymentStatus === 'success' && 
+                           unitTestsStatus === 'passed' && 
+                           e2eTestsStatus === 'passed' &&
+                           (lintStatus === 'passed' || lintStatus === 'skipped');
+
+          const statusEmoji = allPassed ? '🚀' : '❌';
+          const overallStatus = allPassed ? '✅ SUCCESS' : '❌ FAILED';
+
+          // Helper to format status
+          const formatStatus = (status) => {
+            switch(status) {
+              case 'success':
+              case 'passed':
+                return '✅ Passed';
+              case 'failed':
+                return '❌ Failed';
+              case 'skipped':
+                return '⏭️ Skipped';
+              default:
+                return status;
+            }
+          };
+
+          // Build comment body
+          let commentBody = `${statusEmoji} **PR Testing Complete: ${overallStatus}**
+
+          ## Deployment Details
+          - **Environment**: ${environment.charAt(0).toUpperCase() + environment.slice(1)}
+          - **API URL**: ${apiUrl}
+          - **Deployment**: ${formatStatus(deploymentStatus)}
+
+          ## Test Results
+          - **Linting**: ${formatStatus(lintStatus)}
+          - **Unit Tests**: ${formatStatus(unitTestsStatus)}
+          - **E2E Tests**: ${formatStatus(e2eTestsStatus)}`;
+
+          // Add coverage if provided
+          if (coverageText && coverageText !== '') {
+            commentBody += `\n\n## Coverage\n${coverageText}`;
+          }
+
+          // Add conclusion
+          if (allPassed) {
+            commentBody += `\n\n🎉 **Ready for merge!** All tests passed and deployment to ${environment} was successful.`;
+          } else {
+            commentBody += `\n\n⚠️ **Issues found.** Please check the workflow logs and fix the issues before merging.`;
+          }
+
+          // Add workflow link
+          commentBody += `\n\n[View Workflow Run](${context.payload.repository.html_url}/actions/runs/${context.runId})`;
+
+          // Create the comment
+          const comment = await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: prNumber,
+            body: commentBody
+          });
+
+          core.setOutput('comment_id', comment.data.id);
+          console.log('✅ PR comment created:', comment.data.html_url);
+          return comment.data.id;
+
+    - name: Comment Summary
+      if: always()
+      shell: bash
+      run: |
+        echo "## PR Comment" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        if [ -n "${{ steps.comment.outputs.comment_id }}" ]; then
+          echo "✅ **Comment posted successfully**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **PR:** #${{ inputs.pr-number }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Comment ID:** ${{ steps.comment.outputs.comment_id }}" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **Comment posting failed**" >> $GITHUB_STEP_SUMMARY
+        fi
