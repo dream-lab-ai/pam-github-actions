@@ -262,6 +262,119 @@ You can use it in the workflow:
 - **Dependencies:** You must install dependencies before calling this action
 - **Lint Script:** Your project must have a lint command defined in `package.json`
 
+### Format Action
+
+Runs code formatting checks with configurable Node.js versions and package managers, generates GitHub summaries, and uploads format results as artifacts.
+
+**Location:** `format/action.yml`
+
+#### Inputs
+
+| Input                  | Description                       | Required | Default            |
+| ---------------------- | --------------------------------- | -------- | ------------------ |
+| `node-version`         | Node.js version to use            | No       | `'22'`             |
+| `package-manager`      | Package manager (npm, pnpm, yarn) | No       | `'npm'`            |
+| `format-command`       | Format command to run             | No       | `'npm run format'` |
+| `skip-env-validation`  | Skip environment validation       | No       | `'true'`           |
+| `results-directory`    | Directory to store format results | No       | `'format-results'` |
+| `artifact-name-prefix` | Prefix for artifact name          | No       | `'format-results'` |
+
+#### Outputs
+
+| Output                | Description                                                     |
+| --------------------- | --------------------------------------------------------------- |
+| `format_passed`       | Boolean indicating if formatting passed (`'true'` or `'false'`) |
+| `format_results_path` | Path to the format results directory                            |
+
+#### Basic Usage
+
+```yaml
+name: Format
+
+on:
+  push:
+    branches: ['*']
+  pull_request:
+    branches: ['*']
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Formatting
+        uses: dream-lab-ai/pam-github-actions/format@main
+```
+
+#### Advanced Usage
+
+```yaml
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Formatting
+        id: format
+        uses: dream-lab-ai/pam-github-actions/format@main
+        with:
+          node-version: '22'
+          package-manager: 'npm'
+          format-command: 'npm run format'
+          results-directory: 'format-results'
+          artifact-name-prefix: 'format-results'
+
+      - name: Check Format Results
+        if: always()
+        run: |
+          echo "Formatting passed: ${{ steps.format.outputs.format_passed }}"
+```
+
+#### Example with Custom Format Script
+
+If your project has a different format script in `package.json`:
+
+```json
+{
+  "scripts": {
+    "format:check": "prettier --check ."
+  }
+}
+```
+
+You can use it in the workflow:
+
+```yaml
+- uses: dream-lab-ai/pam-github-actions/format@main
+  with:
+    format-command: 'npm run format:check'
+```
+
+#### Requirements
+
+- **Checkout:** You must checkout your code before calling this action
+- **Node.js Setup:** You must setup Node.js before calling this action
+- **Dependencies:** You must install dependencies before calling this action
+- **Format Script:** Your project must have a format command defined in `package.json`
+
 ### E2E Test Action
 
 Runs E2E tests with coverage reporting, generates comprehensive GitHub summaries with coverage metrics, and uploads test artifacts.
@@ -724,6 +837,8 @@ pam-github-actions/
 │   └── action.yml          # GitHub issue creation action
 ├── e2e-test/
 │   └── action.yml          # E2E test with coverage composite action
+├── format/
+│   └── action.yml          # Code formatting composite action
 ├── lint/
 │   └── action.yml          # Linting composite action
 ├── pr-comment/

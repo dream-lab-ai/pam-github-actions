@@ -1,0 +1,132 @@
+name: 'Formatting'
+description: 'Run code formatting checks with GitHub summaries and artifact uploads'
+author: 'Pam Team'
+
+inputs:
+  node-version:
+    description: 'Node.js version to use'
+    required: false
+    default: '22'
+  package-manager:
+    description: 'Package manager to use (npm, pnpm, or yarn)'
+    required: false
+    default: 'npm'
+  format-command:
+    description: 'Format command to run'
+    required: false
+    default: 'npm run format'
+  skip-env-validation:
+    description: 'Skip environment validation'
+    required: false
+    default: 'true'
+  results-directory:
+    description: 'Directory to store format results'
+    required: false
+    default: 'format-results'
+  artifact-name-prefix:
+    description: 'Prefix for artifact name'
+    required: false
+    default: 'format-results'
+
+outputs:
+  format_passed:
+    description: 'Boolean indicating if formatting passed'
+    value: ${{ steps.format_results.outputs.format_passed }}
+  format_results_path:
+    description: 'Path to the format results directory'
+    value: ${{ steps.format_results.outputs.format_results_path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Format Results Directory
+      shell: bash
+      run: |
+        mkdir -p ${{ inputs.results-directory }}
+        echo "Created format results directory: ${{ inputs.results-directory }}"
+
+    - name: Run Formatting
+      id: run_format
+      shell: bash
+      run: |
+        echo "## Format Results" >> $GITHUB_STEP_SUMMARY
+        echo "✨ Running code formatting..." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        # Run formatting with live output and save to file
+        set +e  # Don't exit on error immediately
+        ${{ inputs.format-command }} 2>&1 | tee ${{ inputs.results-directory }}/format-output.txt
+        format_exit_code=${PIPESTATUS[0]}
+        set -e  # Re-enable exit on error
+
+        # Store exit code for later steps
+        echo "format_exit_code=$format_exit_code" >> $GITHUB_OUTPUT
+
+        if [ $format_exit_code -eq 0 ]; then
+          echo "format_status=passed" >> $GITHUB_OUTPUT
+        else
+          echo "format_status=failed" >> $GITHUB_OUTPUT
+        fi
+      env:
+        HUSKY: 0
+        SKIP_ENV_VALIDATION: ${{ inputs.skip-env-validation }}
+
+    - name: Generate GitHub Step Summary
+      if: always()
+      shell: bash
+      run: |
+        format_status="${{ steps.run_format.outputs.format_status }}"
+        format_exit_code="${{ steps.run_format.outputs.format_exit_code }}"
+
+        # Display format status
+        if [ "$format_status" = "passed" ]; then
+          echo "### ✅ Formatting Passed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All code is properly formatted." >> $GITHUB_STEP_SUMMARY
+        else
+          echo "### ❌ Formatting Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Code formatting issues detected. Please format your code." >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        # Display format output for failures
+        if [ "$format_status" = "failed" ]; then
+          echo "### Formatting Issues" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          cat ${{ inputs.results-directory }}/format-output.txt >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: Set Action Outputs
+      id: format_results
+      if: always()
+      shell: bash
+      run: |
+        format_status="${{ steps.run_format.outputs.format_status }}"
+
+        # Set format_passed output
+        if [ "$format_status" = "passed" ]; then
+          echo "format_passed=true" >> $GITHUB_OUTPUT
+        else
+          echo "format_passed=false" >> $GITHUB_OUTPUT
+        fi
+
+        # Set paths
+        echo "format_results_path=${{ inputs.results-directory }}" >> $GITHUB_OUTPUT
+
+    - name: Upload Format Results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name-prefix }}-${{ github.run_id }}
+        path: |
+          ${{ inputs.results-directory }}/
+        retention-days: 30
+
+    - name: Fail Job if Formatting Failed
+      if: steps.run_format.outputs.format_status == 'failed'
+      shell: bash
+      run: |
+        echo "❌ Formatting failed with exit code ${{ steps.run_format.outputs.format_exit_code }}"
+        exit 1
