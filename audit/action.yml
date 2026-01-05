@@ -1,0 +1,60 @@
+name: 'Security Audit'
+description: 'Run npm security audit with configurable Node.js version and package manager'
+author: 'Pam Team'
+
+inputs:
+  node-version:
+    description: 'Node.js version to use'
+    required: false
+    default: '22'
+  package-manager:
+    description: 'Package manager to use (npm, pnpm, or yarn)'
+    required: false
+    default: 'npm'
+  skip-env-validation:
+    description: 'Skip environment validation'
+    required: false
+    default: 'true'
+  audit-command:
+    description: 'Command to run for security audit'
+    required: false
+    default: 'npm audit'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: ${{ inputs.package-manager }}
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        case "${{ inputs.package-manager }}" in
+          npm)
+            npm ci
+            ;;
+          pnpm)
+            pnpm install --frozen-lockfile
+            ;;
+          yarn)
+            yarn install --frozen-lockfile
+            ;;
+          *)
+            echo "Unsupported package manager: ${{ inputs.package-manager }}"
+            exit 1
+            ;;
+        esac
+      env:
+        SKIP_ENV_VALIDATION: ${{ inputs.skip-env-validation }}
+
+    - name: Run security audit
+      shell: bash
+      run: ${{ inputs.audit-command }}
+      env:
+        SKIP_ENV_VALIDATION: ${{ inputs.skip-env-validation }}
