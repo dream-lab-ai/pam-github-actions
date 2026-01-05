@@ -56,7 +56,7 @@ jobs:
     steps:
       - uses: dream-lab-ai/pam-github-actions/audit@main
         with:
-          node-version: '20'
+          node-version: '22'
           package-manager: 'pnpm'
           audit-command: 'pnpm audit'
 ```

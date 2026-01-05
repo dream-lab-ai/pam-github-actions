@@ -14,7 +14,7 @@
     "prepare": "husky"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "devDependencies": {
     "@dream-lab-ai/pam-eslint-config": "github:dream-lab-ai/pam-eslint-config",
