@@ -22,12 +22,12 @@ Runs npm security audits with configurable Node.js versions and package managers
 
 #### Inputs
 
-| Input | Description | Required | Default |
-|-------|-------------|----------|---------|
-| `node-version` | Node.js version to use | No | `'22'` |
-| `package-manager` | Package manager (npm, pnpm, yarn) | No | `'npm'` |
-| `skip-env-validation` | Skip environment validation | No | `'true'` |
-| `audit-command` | Command to run for security audit | No | `'npm audit'` |
+| Input                 | Description                       | Required | Default       |
+| --------------------- | --------------------------------- | -------- | ------------- |
+| `node-version`        | Node.js version to use            | No       | `'22'`        |
+| `package-manager`     | Package manager (npm, pnpm, yarn) | No       | `'npm'`       |
+| `skip-env-validation` | Skip environment validation       | No       | `'true'`      |
+| `audit-command`       | Command to run for security audit | No       | `'npm audit'` |
 
 #### Basic Usage
 
@@ -96,6 +96,7 @@ uses: {owner}/{repo}/{path}@{ref}
 ```
 
 Where:
+
 - `{owner}` - GitHub organization or user (e.g., `dream-lab-ai`)
 - `{repo}` - Repository name (e.g., `pam-github-actions`)
 - `{path}` - Path to the action directory (e.g., `audit`)
@@ -104,27 +105,33 @@ Where:
 ### Best Practices for Versioning
 
 #### Using Branches (Development)
+
 ```yaml
 uses: dream-lab-ai/pam-github-actions/audit@main
 ```
+
 ✅ **Pros:** Always gets latest updates automatically  
 ⚠️ **Cons:** Breaking changes could affect your workflow
 
 **Recommended for:** Development and testing
 
 #### Using Tags (Production)
+
 ```yaml
 uses: dream-lab-ai/pam-github-actions/audit@v1.0.0
 ```
+
 ✅ **Pros:** Stable, predictable, controlled updates  
 ✅ **Cons:** Requires manual updates to get new features
 
 **Recommended for:** Production deployments
 
 #### Using Commit SHAs (Maximum Stability)
+
 ```yaml
 uses: dream-lab-ai/pam-github-actions/audit@a1b2c3d4
 ```
+
 ✅ **Pros:** Immutable, guaranteed consistency  
 ⚠️ **Cons:** Difficult to maintain, no automatic updates
 
@@ -136,15 +143,39 @@ When we release updates to actions in this repository:
 
 1. **For development workflows:** No action needed if using `@main`
 2. **For production workflows:** Update the version tag when ready
+
    ```yaml
    # Before
    uses: dream-lab-ai/pam-github-actions/audit@v1.0.0
-   
+
    # After
    uses: dream-lab-ai/pam-github-actions/audit@v1.1.0
    ```
 
 ## Contributing
+
+### Development Setup
+
+This repository uses Prettier for formatting YAML and Markdown files.
+
+1. Install dependencies:
+
+   ```bash
+   npm install
+   ```
+
+2. Format all files:
+
+   ```bash
+   npm run format
+   ```
+
+3. Check formatting without changes:
+   ```bash
+   npm run format:check
+   ```
+
+The Prettier configuration is sourced from `@dream-lab-ai/pam-eslint-config` to maintain consistency across all Pam projects.
 
 ### Adding New Actions
 
@@ -176,6 +207,11 @@ When we release updates to actions in this repository:
 pam-github-actions/
 ├── audit/
 │   └── action.yml          # Security audit composite action
+├── package.json            # Node.js dependencies (Prettier)
+├── .prettierrc.js          # Prettier configuration
+├── .prettierignore         # Prettier ignore patterns
+├── .nvmrc                  # Node version specification
+├── .gitignore              # Git ignore patterns
 ├── README.md               # This file
 └── .github/
     └── workflows/          # Future: workflows to test actions
@@ -195,6 +231,7 @@ Potential actions to add:
 ## Support
 
 For questions or issues:
+
 1. Check existing issues in this repository
 2. Review the action's `action.yml` for configuration details
 3. Create a new issue with details about your use case

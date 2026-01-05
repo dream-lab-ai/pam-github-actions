@@ -1,0 +1,21 @@
+{
+  "name": "@dream-lab-ai/pam-github-actions",
+  "version": "1.0.0",
+  "author": "Pam AI",
+  "description": "Reusable GitHub Actions for Pam AI projects",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dream-lab-ai/pam-github-actions.git"
+  },
+  "private": true,
+  "scripts": {
+    "format": "prettier --write ."
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@dream-lab-ai/pam-eslint-config": "github:dream-lab-ai/pam-eslint-config",
+    "prettier": "^3.5.3"
+  }
+}
