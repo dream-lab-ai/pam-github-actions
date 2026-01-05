@@ -51,10 +51,12 @@ runs:
             ;;
         esac
       env:
+        HUSKY: 0
         SKIP_ENV_VALIDATION: ${{ inputs.skip-env-validation }}
 
     - name: Run security audit
       shell: bash
       run: ${{ inputs.audit-command }}
       env:
+        HUSKY: 0
         SKIP_ENV_VALIDATION: ${{ inputs.skip-env-validation }}
